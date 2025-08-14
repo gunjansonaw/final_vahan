@@ -47,200 +47,44 @@ class VahanDataCollector:
     def _fetch_from_api(self) -> Optional[pd.DataFrame]:
         """
         Attempt to fetch data from Vahan API endpoints.
-        Note: This method now attempts to connect to official data sources.
-        Real implementation requires API keys from authorized providers.
         """
         try:
-            # Public analytics endpoints (if available)
-            public_endpoints = [
-                "https://analytics.parivahan.gov.in/api/dashboard/registration",
-                "https://vahan.parivahan.gov.in/api/public/statistics",
-                "https://vahan.parivahan.gov.in/vahan4dashboard/api/data"
+            # Common Vahan API endpoints for vehicle data
+            api_endpoints = [
+                "/vahan/api/getVehicleData",
+                "/api/vehicle-registration",
+                "/dashboard/api/registration-data"
             ]
             
-            # Third-party authorized APIs (require API keys)
-            authorized_endpoints = {
-                "masters_india": "https://api.mastersindia.co/vahan/vehicle-detail",
-                "surepass": "https://kyc-api.surepass.io/api/v1/vehicle-rc-verification",
-                "hyperverge": "https://api.hyperverge.co/v1/vahan/verify"
-            }
-            
-            # First try public endpoints
-            for endpoint in public_endpoints:
+            for endpoint in api_endpoints:
                 try:
-                    response = self.session.get(endpoint, timeout=15)
-                    if response.status_code == 200:
-                        data = response.json()
-                        df = self._parse_api_response(data)
-                        if df is not None and not df.empty:
-                            return df
-                    time.sleep(2)  # Rate limiting
-                except Exception as e:
-                    continue
-            
-            # If we have API keys, try authorized endpoints
-            api_key = self._get_api_key()
-            if api_key:
-                for provider, endpoint in authorized_endpoints.items():
-                    try:
-                        headers = {
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json"
-                        }
+                    url = f"{self.base_url}{endpoint}"
+                    
+                    # Try different parameter combinations
+                    params_list = [
+                        {"state": "DL", "period": "monthly", "vehicle_type": "all"},
+                        {"state": "all", "from_date": "2023-01-01", "to_date": "2024-12-31"},
+                        {"type": "registration", "format": "json"}
+                    ]
+                    
+                    for params in params_list:
+                        response = self.session.get(url, params=params, timeout=10)
                         
-                        # Sample request for registration data
-                        payload = {
-                            "type": "registration_statistics",
-                            "period": "monthly",
-                            "state": "all"
-                        }
-                        
-                        response = self.session.post(endpoint, headers=headers, json=payload, timeout=15)
                         if response.status_code == 200:
                             data = response.json()
                             df = self._parse_api_response(data)
                             if df is not None and not df.empty:
                                 return df
                         
-                        time.sleep(2)  # Rate limiting
-                    except Exception as e:
-                        continue
+                        time.sleep(1)  # Rate limiting
+                
+                except Exception as e:
+                    continue
             
             return None
             
         except Exception as e:
             print(f"API fetch error: {str(e)}")
-            return None
-    
-    def _get_api_key(self) -> Optional[str]:
-        """
-        Get API key from environment variables.
-        """
-        import os
-        return os.getenv('VAHAN_API_KEY') or os.getenv('MASTERS_INDIA_API_KEY') or os.getenv('SUREPASS_API_KEY')
-    
-    def _fetch_bulk_registration_data(self, api_key: str, provider: str) -> Optional[pd.DataFrame]:
-        """
-        Fetch bulk vehicle registration data for analytics.
-        This method would be used with actual API providers.
-        """
-        try:
-            if provider == "masters_india":
-                return self._fetch_masters_india_bulk(api_key)
-            elif provider == "surepass":
-                return self._fetch_surepass_bulk(api_key)
-            elif provider == "hyperverge":
-                return self._fetch_hyperverge_bulk(api_key)
-            
-            return None
-        except Exception as e:
-            print(f"Bulk data fetch error for {provider}: {str(e)}")
-            return None
-    
-    def _fetch_masters_india_bulk(self, api_key: str) -> Optional[pd.DataFrame]:
-        """
-        Masters India API implementation for bulk vehicle data.
-        """
-        try:
-            # Masters India typically provides individual vehicle verification
-            # For bulk analytics, would need special arrangement with provider
-            url = "https://api.mastersindia.co/bulk/vehicle-statistics"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "type": "registration_analytics",
-                "period": "monthly",
-                "states": ["DL", "MH", "KA", "TN", "UP", "GJ"],  # Major states
-                "vehicle_types": ["2W", "3W", "4W"],
-                "start_date": "2023-01-01",
-                "end_date": "2024-12-31"
-            }
-            
-            response = self.session.post(url, headers=headers, json=payload, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                return self._parse_bulk_response(data, "masters_india")
-            
-            return None
-        except Exception as e:
-            print(f"Masters India bulk fetch error: {str(e)}")
-            return None
-    
-    def _fetch_surepass_bulk(self, api_key: str) -> Optional[pd.DataFrame]:
-        """
-        Surepass API implementation for bulk vehicle data.
-        """
-        try:
-            url = "https://kyc-api.surepass.io/api/v1/vehicle/bulk-analytics"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "analytics_type": "registration_trends",
-                "timeframe": "monthly",
-                "categories": ["2W", "3W", "4W"],
-                "manufacturers": True,
-                "geographic_scope": "national"
-            }
-            
-            response = self.session.post(url, headers=headers, json=payload, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                return self._parse_bulk_response(data, "surepass")
-            
-            return None
-        except Exception as e:
-            print(f"Surepass bulk fetch error: {str(e)}")
-            return None
-    
-    def _parse_bulk_response(self, data: Dict, provider: str) -> Optional[pd.DataFrame]:
-        """
-        Parse bulk API response into standardized format.
-        """
-        try:
-            records = []
-            
-            if provider == "masters_india":
-                # Parse Masters India response format
-                if 'analytics_data' in data:
-                    for entry in data['analytics_data']:
-                        record = {
-                            'date': self._parse_date(entry.get('period')),
-                            'vehicle_category': self._standardize_category(entry.get('vehicle_type')),
-                            'manufacturer': entry.get('manufacturer', 'Unknown'),
-                            'registrations': int(entry.get('count', 0)),
-                            'state': entry.get('state', 'Unknown'),
-                            'data_source': 'masters_india'
-                        }
-                        records.append(record)
-            
-            elif provider == "surepass":
-                # Parse Surepass response format
-                if 'trend_data' in data:
-                    for entry in data['trend_data']:
-                        record = {
-                            'date': self._parse_date(entry.get('date')),
-                            'vehicle_category': self._standardize_category(entry.get('category')),
-                            'manufacturer': entry.get('manufacturer', 'Unknown'),
-                            'registrations': int(entry.get('registrations', 0)),
-                            'state': entry.get('state', 'All'),
-                            'data_source': 'surepass'
-                        }
-                        records.append(record)
-            
-            if records:
-                df = pd.DataFrame(records)
-                return self._validate_and_clean_data(df)
-            
-            return None
-            
-        except Exception as e:
-            print(f"Bulk response parsing error: {str(e)}")
             return None
     
     def _fetch_from_web_scraping(self) -> Optional[pd.DataFrame]:
@@ -376,7 +220,7 @@ class VahanDataCollector:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
             
-            date_range = pd.date_range(start=start_date, end=end_date, freq='ME')
+            date_range = pd.date_range(start=start_date, end=end_date, freq='M')
             
             # Vehicle categories as per Vahan classification
             categories = ['2W', '3W', '4W']
