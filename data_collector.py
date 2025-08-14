@@ -220,7 +220,7 @@ class VahanDataCollector:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
             
-            date_range = pd.date_range(start=start_date, end=end_date, freq='M')
+            date_range = pd.date_range(start=start_date, end=end_date, freq='ME')
             
             # Vehicle categories as per Vahan classification
             categories = ['2W', '3W', '4W']
